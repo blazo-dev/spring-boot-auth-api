@@ -7,6 +7,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,7 +29,7 @@ import dev.blazo.crud.service.ProductService;
 public class ProductController {
     @Autowired
     private ProductService productService;
-    private static final String PRODUCT_NOT_FOUND_MESSAGE = "The product does not exist";
+    private static final String PRODUCT_NOT_FOUND_MESSAGE = "Error: Product doesn't exist";
 
     /**
      * `@GetMapping("")` es una anotación de Spring que asigna las solicitudes HTTP
@@ -38,7 +39,6 @@ public class ProductController {
      * a "/products", se llamará al método `getAll()` en la clase
      * `ProductController`.
      */
-    @GetMapping("")
     /**
      * Llama al método `listAll()` en la clase `ProductService` para obtener una
      * lista de todos los productos,
@@ -47,7 +47,9 @@ public class ProductController {
      * El objeto `ResponseEntity` permite tener un mayor control sobre la respuesta,
      * como configurar encabezados o devolver un código de estado diferente.
      */
-    public ResponseEntity<List<Product>> getAll() {
+    @PreAuthorize("isAuthenticated()")
+    @GetMapping("")
+    public ResponseEntity<List<Product>> findAll() {
         List<Product> products = productService.listAll();
         return new ResponseEntity<>(products, HttpStatus.OK);
     }
@@ -55,39 +57,39 @@ public class ProductController {
     @GetMapping("/{id}")
     public ResponseEntity<?> getOne(@PathVariable("id") int id) {
         if (!productService.existsById(id))
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         Optional<Product> optionalProduct = productService.getOne(id);
         if (!optionalProduct.isPresent())
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         Product product = optionalProduct.get();
-        return createProductOkResponse(product);
+        return createProductResponse(product, HttpStatus.OK);
     }
 
     @GetMapping("/detail-name/{name}")
     public ResponseEntity<?> getOne(@PathVariable("name") String name) {
         if (!productService.existsByName(name))
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         Optional<Product> optionalProduct = productService.findByName(name);
         if (!optionalProduct.isPresent())
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         Product product = optionalProduct.get();
-        return createProductOkResponse(product);
+        return createProductResponse(product, HttpStatus.OK);
     }
 
     @PostMapping("")
     public ResponseEntity<MessageDTO> create(@RequestBody ProductDTO productDto) {
         if (StringUtils.isBlank(productDto.getName()))
-            return createBadRequestResponse("Product name is mandatory");
+            return createRequestResponse("Error: Product name is mandatory", HttpStatus.BAD_REQUEST);
 
         if (productDto.getPrice() == null || productDto.getPrice() < 0)
-            return createBadRequestResponse("Product price is mandatory");
+            return createRequestResponse("Error: Product price is mandatory", HttpStatus.BAD_REQUEST);
 
         if (productService.existsByName(productDto.getName()))
-            return createBadRequestResponse("Product name already exists");
+            return createRequestResponse("Error: Product name already exists", HttpStatus.CONFLICT);
 
         Product product = new Product(productDto.getName(), productDto.getPrice());
         productService.save(product);
@@ -100,55 +102,47 @@ public class ProductController {
         Optional<Product> optionalProductByName = productService.findByName(productDto.getName());
 
         if (!productService.existsById(id))
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         if (StringUtils.isBlank(productDto.getName()))
-            return createBadRequestResponse("Product name is mandatory");
+            return createRequestResponse("Error: Product name is mandatory", HttpStatus.BAD_REQUEST);
 
         if (productDto.getPrice() == null || productDto.getPrice() < 0)
-            return createBadRequestResponse("Product price is mandatory");
+            return createRequestResponse("Error: Product price is mandatory", HttpStatus.BAD_REQUEST);
 
         if (productService.existsByName(productDto.getName())
                 && optionalProductByName.isPresent()
                 && optionalProductByName.get().getId() != id)
-            return createBadRequestResponse("Product name already exists");
+            return createRequestResponse("Product name already exists", HttpStatus.CONFLICT);
 
         Optional<Product> optionalProduct = productService.getOne(id);
         if (!optionalProduct.isPresent())
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         Product product = optionalProduct.get();
         product.setName(productDto.getName());
         product.setPrice(productDto.getPrice());
         productService.save(product);
-        return createMessageOkResponse("Product updated successfully!");
+        return createRequestResponse("Product updated successfully!", HttpStatus.CREATED);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     @DeleteMapping("/{id}")
     public ResponseEntity<MessageDTO> delete(@PathVariable("id") int id) {
         if (!productService.existsById(id))
-            return createNotFoundResponse(PRODUCT_NOT_FOUND_MESSAGE);
+            return createRequestResponse(PRODUCT_NOT_FOUND_MESSAGE, HttpStatus.NOT_FOUND);
 
         productService.delete(id);
-        return createMessageOkResponse("Product deleted successfully!");
+        return createRequestResponse("Product deleted successfully!", HttpStatus.OK);
     }
 
-    private ResponseEntity<MessageDTO> createNotFoundResponse(String message) {
+    private ResponseEntity<MessageDTO> createRequestResponse(String message, HttpStatus httpStatus) {
         MessageDTO errorMessage = new MessageDTO(message);
-        return new ResponseEntity<>(errorMessage, HttpStatus.NOT_FOUND);
+        return new ResponseEntity<>(errorMessage, httpStatus);
     }
 
-    private ResponseEntity<MessageDTO> createBadRequestResponse(String message) {
-        MessageDTO errorMessage = new MessageDTO(message);
-        return new ResponseEntity<>(errorMessage, HttpStatus.BAD_REQUEST);
-    }
-
-    private ResponseEntity<Product> createProductOkResponse(Product product) {
-        return new ResponseEntity<>(product, HttpStatus.OK);
-    }
-
-    private ResponseEntity<MessageDTO> createMessageOkResponse(String message) {
-        return new ResponseEntity<>(new MessageDTO(message), HttpStatus.OK);
+    private ResponseEntity<Product> createProductResponse(Product product, HttpStatus httpStatus) {
+        return new ResponseEntity<>(product, httpStatus);
     }
 
 }

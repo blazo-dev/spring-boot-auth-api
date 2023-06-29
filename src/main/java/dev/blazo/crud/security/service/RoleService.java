@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import dev.blazo.crud.security.entity.Role;
+import dev.blazo.crud.security.enums.RoleName;
 import dev.blazo.crud.security.repository.RoleRepository;
 
 @Service
@@ -16,8 +17,8 @@ public class RoleService {
     @Autowired
     private RoleRepository roleRepository;
 
-    public Optional<Role> findByRoleName(String name) {
-        return roleRepository.findByRoleName(name);
+    public Optional<Role> findByRoleName(RoleName roleName) {
+        return roleRepository.findByRoleName(roleName);
     }
 
     public void save(Role role) {
